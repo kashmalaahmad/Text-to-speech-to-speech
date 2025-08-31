@@ -1,0 +1,9 @@
+venv/
+*.pdf
+*.mp3
+*.wav
+__pycache__/
+*.pyc
+cloned_temp_chunk_*.wav
+temp_book.pdf
+temp_voice.wav

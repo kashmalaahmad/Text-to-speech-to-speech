@@ -23,8 +23,15 @@ torch.serialization.load = torch_serialization_wrapper
 import streamlit as st
 import pdfplumber
 from gtts import gTTS
-from TTS.api import TTS
 from pydub import AudioSegment
+
+# Try to import TTS, but don't fail if it's not available
+try:
+    from TTS.api import TTS
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
+    st.warning("Voice cloning not available in this environment. Only default voice (gTTS) will work.")
 
 def pull_text_from_pdf(pdf_path):
     all_text = ""
@@ -57,6 +64,9 @@ def stitch_audio_files(audio_files, output_path="/tmp/default_audiobook.mp3"):
     return output_path
 
 def clone_text_chunks_to_audiobook(text_chunks, voice_sample_path, output_path="/tmp/cloned_audiobook.wav", language="en"):
+    if not TTS_AVAILABLE:
+        st.error("Voice cloning is not available in this deployment environment.")
+        return None
     try:
         # Remove the problematic safe_globals context and rely on the patch
         model = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)

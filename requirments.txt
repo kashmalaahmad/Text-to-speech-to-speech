@@ -1,9 +1,8 @@
 streamlit
 pdfplumber
 gTTS
-TTS==0.22.0
+TTS
 pydub
-torch==2.1.2+cpu
-torchaudio==2.1.2+cpu
-numpy==1.26.4
---find-links https://download.pytorch.org/whl/torch_stable.html
+torch
+torchaudio
+numpy

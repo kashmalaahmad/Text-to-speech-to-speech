@@ -1,8 +1,4 @@
 streamlit
 pdfplumber
 gTTS
-TTS
 pydub
-torch
-torchaudio
-numpy

@@ -1,6 +1,9 @@
-pdfplumber==0.11.7
-gTTS==2.5.3
-pydub==0.25.1
+streamlit
+pdfplumber
+gTTS
 TTS==0.22.0
-streamlit==1.39.0
-requests==2.32.4
+pydub
+torch==2.1.2+cpu
+torchaudio==2.1.2+cpu
+numpy==1.26.4
+--find-links https://download.pytorch.org/whl/torch_stable.html

@@ -1,10 +1,30 @@
+
+import os
+import torch
+os.environ['COQUI_TOS_AGREED'] = '1'  # ✅ Auto-accept Coqui TOS
+
+# ✅ More comprehensive patch for torch.load
+import torch.serialization
+
+_original_torch_load = torch.load
+_original_torch_serialization_load = torch.serialization.load
+
+def torch_load_wrapper(*args, **kwargs):
+    kwargs["weights_only"] = False  # Always set to False
+    return _original_torch_load(*args, **kwargs)
+
+def torch_serialization_wrapper(*args, **kwargs):
+    kwargs["weights_only"] = False
+    return _original_torch_serialization_load(*args, **kwargs)
+
+torch.load = torch_load_wrapper
+torch.serialization.load = torch_serialization_wrapper
+
 import streamlit as st
 import pdfplumber
 from gtts import gTTS
 from TTS.api import TTS
 from pydub import AudioSegment
-import os
-
 
 def pull_text_from_pdf(pdf_path):
     all_text = ""
@@ -16,47 +36,61 @@ def pull_text_from_pdf(pdf_path):
     return all_text
 
 def split_into_chunks(text, max_chars=500):
-    chunks = [text[i:i + max_chars] for i in range(0, len(text), max_chars)]
-    return chunks
-
+    return [text[i:i + max_chars] for i in range(0, len(text), max_chars)]
 
 def make_speech_from_chunks(text_chunks, language="en"):
     audio_files = []
     for idx, chunk in enumerate(text_chunks):
         tts = gTTS(text=chunk, lang=language)
-        temp_file = f"temp_{idx}.mp3"
+        temp_file = f"/tmp/temp_{idx}.mp3"
         tts.save(temp_file)
         audio_files.append(temp_file)
     return audio_files
 
-def stitch_audio_files(audio_files, output_path="default_audiobook.mp3"):
+def stitch_audio_files(audio_files, output_path="/tmp/default_audiobook.mp3"):
     combined_sound = AudioSegment.empty()
     for audio in audio_files:
         sound_clip = AudioSegment.from_mp3(audio)
         combined_sound += sound_clip
-        os.remove(audio)  # Clean up
+        os.remove(audio)
     combined_sound.export(output_path, format="mp3")
     return output_path
 
-
-def clone_text_chunks_to_audiobook(text_chunks, voice_sample_path, output_path="cloned_audiobook.wav", language="en"):
-    model = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)
-    audio_chunks = []
-    for i, chunk in enumerate(text_chunks):
-        temp_wav = f"cloned_temp_chunk_{i}.wav"
-        try:
-            model.tts_to_file(text=chunk, speaker_wav=voice_sample_path, language=language, file_path=temp_wav)
-            audio_chunks.append(temp_wav)
-        except Exception as e:
-            st.error(f"Error processing chunk {i}: {e}")
-    if audio_chunks:
-        combined = AudioSegment.empty()
-        for chunk in audio_chunks:
-            combined += AudioSegment.from_wav(chunk)
-            os.remove(chunk)
-        combined.export(output_path, format="wav")
-        return output_path
-    return None
+def clone_text_chunks_to_audiobook(text_chunks, voice_sample_path, output_path="/tmp/cloned_audiobook.wav", language="en"):
+    try:
+        # Remove the problematic safe_globals context and rely on the patch
+        model = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)
+        
+        audio_chunks = []
+        total_chunks = len(text_chunks)
+        
+        for i, chunk in enumerate(text_chunks):
+            if not chunk.strip():  # Skip empty chunks
+                continue
+                
+            st.write(f"Processing chunk {i+1}/{total_chunks}...")
+            temp_wav = f"/tmp/cloned_temp_chunk_{i}.wav"
+            
+            try:
+                model.tts_to_file(text=chunk, speaker_wav=voice_sample_path, language=language, file_path=temp_wav)
+                audio_chunks.append(temp_wav)
+            except Exception as chunk_error:
+                st.warning(f"Failed to process chunk {i}: {chunk_error}")
+                continue
+        
+        if audio_chunks:
+            combined = AudioSegment.empty()
+            for chunk in audio_chunks:
+                if os.path.exists(chunk):
+                    combined += AudioSegment.from_wav(chunk)
+                    combined += AudioSegment.silent(duration=300)  # Add small pause
+                    os.remove(chunk)
+            combined.export(output_path, format="wav")
+            return output_path
+        return None
+    except Exception as e:
+        st.error(f"Error processing chunk or model: {e}")
+        return None
 
 st.title("PDF to Audiobook Generator")
 st.write("Upload a PDF book to create an audiobook. For cloned voice, upload a voice sample.")
@@ -70,32 +104,30 @@ language = st.selectbox("Select Language", ["en", "es", "fr"])
 
 if st.button("Generate Audiobook"):
     if pdf_file:
-       
-        pdf_path = "temp_book.pdf"
+        pdf_path = "/tmp/temp_book.pdf"
         with open(pdf_path, "wb") as f:
             f.write(pdf_file.read())
-        
-       
+
         with st.spinner("Extracting text from PDF..."):
             text = pull_text_from_pdf(pdf_path)
             text_chunks = split_into_chunks(text)
-        
+
         output_path = None
         if voice_mode == "Default Voice (gTTS)":
             with st.spinner("Generating audiobook in default voice..."):
                 audio_files = make_speech_from_chunks(text_chunks, language=language)
-                output_path = stitch_audio_files(audio_files, "default_audiobook.mp3")
-        else:  
+                output_path = stitch_audio_files(audio_files)
+        else:
             if voice_sample:
-                voice_path = "temp_voice.wav"
+                voice_path = "/tmp/temp_voice.wav"
                 with open(voice_path, "wb") as f:
                     f.write(voice_sample.read())
                 with st.spinner("Generating audiobook in cloned voice..."):
-                    output_path = clone_text_chunks_to_audiobook(text_chunks, voice_path, "cloned_audiobook.wav", language=language)
+                    output_path = clone_text_chunks_to_audiobook(text_chunks, voice_path, language=language)
                 os.remove(voice_path)
             else:
                 st.error("Please upload a voice sample for cloned voice.")
-        
+
         if output_path and os.path.exists(output_path):
             st.success(f"Audiobook generated successfully in {voice_mode}!")
             audio_format = "audio/mp3" if output_path.endswith(".mp3") else "audio/wav"

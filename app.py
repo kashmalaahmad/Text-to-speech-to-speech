@@ -1,38 +1,48 @@
-
 import os
-import torch
-os.environ['COQUI_TOS_AGREED'] = '1'  # ✅ Auto-accept Coqui TOS
-
-# ✅ More comprehensive patch for torch.load
-import torch.serialization
-
-_original_torch_load = torch.load
-_original_torch_serialization_load = torch.serialization.load
-
-def torch_load_wrapper(*args, **kwargs):
-    kwargs["weights_only"] = False  # Always set to False
-    return _original_torch_load(*args, **kwargs)
-
-def torch_serialization_wrapper(*args, **kwargs):
-    kwargs["weights_only"] = False
-    return _original_torch_serialization_load(*args, **kwargs)
-
-torch.load = torch_load_wrapper
-torch.serialization.load = torch_serialization_wrapper
-
 import streamlit as st
 import pdfplumber
 from gtts import gTTS
 from pydub import AudioSegment
 
-# Try to import TTS, but don't fail if it's not available
-try:
-    from TTS.api import TTS
-    TTS_AVAILABLE = True
-except ImportError:
-    TTS_AVAILABLE = False
-    st.warning("Voice cloning not available in this environment. Only default voice (gTTS) will work.")
+# Set environment variable
+os.environ['COQUI_TOS_AGREED'] = '1'
 
+# Try to import torch and TTS, but gracefully handle failures
+TORCH_AVAILABLE = False
+TTS_AVAILABLE = False
+
+try:
+    import torch
+    import torch.serialization
+    
+    # Apply torch patches
+    _original_torch_load = torch.load
+    _original_torch_serialization_load = torch.serialization.load
+
+    def torch_load_wrapper(*args, **kwargs):
+        kwargs["weights_only"] = False
+        return _original_torch_load(*args, **kwargs)
+
+    def torch_serialization_wrapper(*args, **kwargs):
+        kwargs["weights_only"] = False
+        return _original_torch_serialization_load(*args, **kwargs)
+
+    torch.load = torch_load_wrapper
+    torch.serialization.load = torch_serialization_wrapper
+    TORCH_AVAILABLE = True
+    
+    try:
+        from TTS.api import TTS
+        TTS_AVAILABLE = True
+    except ImportError:
+        pass
+        
+except ImportError:
+    pass
+
+# Show availability status only if torch is not available
+if not TORCH_AVAILABLE:
+    st.warning("Voice cloning not available in this environment. Only default voice (gTTS) will work.")
 def pull_text_from_pdf(pdf_path):
     all_text = ""
     with pdfplumber.open(pdf_path) as pdf:
